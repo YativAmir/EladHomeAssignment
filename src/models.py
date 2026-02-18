@@ -10,4 +10,4 @@ class Chunk(BaseModel):
     source: str
     page: int
     chunk_index: int
-    section: Optional[str] = None
+    section_path: Optional[str] = None

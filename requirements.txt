@@ -1,0 +1,9 @@
+langchain
+langgraph
+openai
+pinecone-client
+sentence-transformers
+pydantic
+pypdf
+streamlit
+python-dotenv

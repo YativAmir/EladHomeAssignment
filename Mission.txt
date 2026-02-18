@@ -1,0 +1,103 @@
+Assignment: Build a LangGraph + RAG Chatbot
+
+You are required to build a chatbot that can conduct a conversation on a chosen content domain (X) and enhance its answers by retrieving information from an external knowledge base using RAG (Retrieval Augmented Generation) implemented with LangGraph. 
+
+
+
+Implementation requirements
+1) Data collection & preparation
+
+Choose a topic/domain (X) of your choice (examples: Cyber Security, Smart Agriculture, etc.). 
+
+
+Collect at least 3 relevant documents (PDF, HTML, Markdown). 
+
+
+Perform preprocessing: cleaning and chunking (splitting into chunks). 
+
+
+2) Indexing
+
+Create embeddings using one of: OpenAI / Cohere / Hugging Face. 
+
+
+Load embeddings into a vector search engine (Vector DB), for example: Pinecone, Weaviate, FAISS, Chroma. 
+
+
+Provide a technological justification for the tools you chose. 
+
+
+3) Build a LangGraph agent
+
+Create a graph with at least 2 steps (no more required):
+
+Receive a user question
+
+Retrieve from the knowledge base and return an answer via an LLM 
+
+
+4) Build a basic user interface (UI)
+
+You must provide a UI that allows using the solution. 
+
+
+You choose the UI technology (examples: React, Angular, Streamlit, or any other UI approach). 
+
+
+The UI must allow the user to enter a question and receive an answer. 
+
+
+No complex design is required—priority is functionality and ease of use. 
+
+
+Submission requirements
+
+Submit a ready project, preferably as a GitHub link with clean, modular code; a ZIP file is also acceptable if easier. 
+
+
+Include a README containing:
+
+Architecture description 
+
+
+Selected technologies and explanations 
+
+
+Installation and run instructions 
+
+
+
+## Selected Technologies (and Why)
+
+- **OpenAI API (LLM for generation)**
+  I will use the OpenAI API as the main LLM to produce final answers, because it provides strong instruction-following, reliable conversational behavior, and supports multi-turn Q&A when combined with retrieval and memory.
+
+- **Pinecone (Vector Database / Retrieval layer)**
+  Pinecone will store the chunked knowledge base and enable fast similarity search at scale. I will also leverage metadata filtering to keep retrieval focused and controllable.
+
+- **BGE-M3 (Embeddings)**
+  I will use BGE-M3 for creating embeddings because it is a strong modern embedding model that supports high-quality semantic retrieval. It also enables hybrid retrieval setups (dense + sparse signals) when configured accordingly.
+
+- **Pydantic (Schema + structured outputs)**
+  Pydantic will be used to enforce strict data contracts across the pipeline:
+  - chunk/metadata schema for indexing
+  - structured LLM outputs (e.g., final answer format, citations fields, debug traces)
+  This reduces brittleness, prevents malformed responses, and makes the system easier to test and maintain.
+
+- **Checkpointing for Session Memory**
+  I will implement a checkpointer to persist conversation state (messages and relevant state variables). This enables consistent multi-turn behavior and supports reproducibility and debugging.
+
+- **Contextualize Query (query rewriting using memory)**
+  Using the stored session state from the checkpointer, the system will include a “Contextualize Query” step that rewrites the user’s latest question into a standalone query that reflects the conversation context. This improves retrieval relevance in ongoing dialogues (e.g., resolving pronouns, implicit references, and follow-up questions).
+
+- **HyDE (Hypothetical Document Embeddings)**
+  The system will generate a short hypothetical answer/document to the user question (HyDE), embed it, and use it as an additional retrieval query. This often improves recall when the original question is short, vague, or uses different phrasing than the source documents.
+
+- **Hybrid Retrieval with Dense + Sparse and RRF (Reciprocal Rank Fusion)**
+  Retrieval will combine:
+  - **Dense search** (semantic similarity via embeddings)
+  - **Sparse/keyword-style search** (lexical matching signals)
+  The results from both retrieval strategies will be merged using **RRF (Reciprocal Rank Fusion)** to improve robustness: dense search captures meaning, sparse search captures exact terms, and RRF balances them to produce a stronger final candidate set for the LLM.
+
+Overall, this stack is designed to maximize retrieval accuracy and multi-turn conversational coherence, while keeping the system modular, testable, and production-friendly.
+

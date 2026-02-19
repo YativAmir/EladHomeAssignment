@@ -175,15 +175,38 @@ flowchart LR
 git clone <your-repo-link>
 cd <your-repo-folder>
 
-python -m venv venv
+python -m venv .venv
 
 # Mac/Linux
-source venv/bin/activate
+source .venv/bin/activate
 
-# Windows
-venv\Scripts\activate
+# Windows (PowerShell)
+.\.venv\Scripts\Activate.ps1
 
-pip install -r requirements.txt
+# Windows (CMD)
+.\.venv\Scripts\activate.bat
+
+# Install deps (recommended)
+python -m pip install -r requirements.txt
+
+# (Optional) Exact, fully pinned environment
+python -m pip install -r requirements.lock.txt
+```
+
+### Troubleshooting (Windows PowerShell – Execution Policy)
+אם אתם מקבלים שגיאה בסגנון:
+`Activate.ps1 cannot be loaded because running scripts is disabled on this system`
+
+פתרון מומלץ (רק לחלון הנוכחי):
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+או להריץ בלי activate בכלל:
+```bash
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
 ### 3) הגדרת משתני סביבה (.env)

@@ -70,15 +70,24 @@ flowchart LR
   S --> LG[LangGraph Agent];
   LG --> R[Retrieve Node];
 
-  R -->|Rewrite / HyDE| Mmini[GPT-4o-mini];
-  Mmini --> Q["Standalone query / HyDE text"];
-  Q --> E["Embed query: BGE M3"];
-  E -->|Vector search| P[Pinecone];
+  R --> Q0["User query (raw)"];
 
+  D1{Rewrite needed?};
+  Q0 --> D1;
+  D1 -- "yes (optional)" --> RW[GPT-4o-mini];
+  D1 -- "no" --> Q1["Query text"];
+  RW --> Q1;
+
+  D2{Use HyDE?};
+  Q1 --> D2;
+  D2 -- "yes (optional)" --> HY[GPT-4o-mini];
+  D2 -- "no" --> T["Text to embed"];
+  HY --> T;
+
+  T --> E["Embed text: BGE M3"];
+  E -->|Vector search| P[Pinecone];
   P --> C["Relevant chunks + metadata"];
   C --> G[Generate Node];
-  Q --> G;
-
   G --> Mo[GPT-4o];
   Mo --> S;
   S -->|Citations| U;

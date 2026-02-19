@@ -64,17 +64,20 @@
 #### תרשים זרימה (Mermaid)
 ```mermaid
 flowchart LR
-U[User] --> S[Streamlit UI]
-S --> LG[LangGraph Agent]
-LG --> R[Retrieve Node]
-R -->|Standalone Query| M[GPT-4o-mini]
-R -->|Vector Search| P[Pinecone]
-R -->|HyDE (optional)| M
-P --> C[Relevant Chunks + Metadata]
-LG --> G[Generate Node]
-G -->|Answer| O[GPT-4o]
-O --> S
-S -->|Citations| U
+  U[User] --> S[Streamlit UI]
+  S --> LG[LangGraph Agent]
+
+  LG --> R[Retrieve Node]
+  R -->|Standalone Query| Mmini[GPT-4o-mini]
+  R -->|Vector Search| P[Pinecone]
+  R -->|HyDE optional| Mmini
+
+  P --> C[Relevant Chunks + Metadata]
+  C --> G[Generate Node]
+
+  G -->|Answer| Mo[GPT-4o]
+  Mo --> S
+  S -->|Citations| U
 ```
 
 ---

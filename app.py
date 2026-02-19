@@ -17,6 +17,8 @@ from src.graph import build_graph
 
 load_dotenv()
 
+MAX_MESSAGES_DISPLAY = 10  # Cap chat history to last N messages
+
 
 # --- Session state helpers ---
 def _init_session():
@@ -28,6 +30,10 @@ def _init_session():
         st.session_state.last_chunks: List[Dict[str, Any]] = []
     if "last_standalone_query" not in st.session_state:
         st.session_state.last_standalone_query: str = ""
+    if "use_hyde" not in st.session_state:
+        st.session_state.use_hyde = False
+    if "last_hypothetical_document" not in st.session_state:
+        st.session_state.last_hypothetical_document = ""
 
 
 def _role(m: Any) -> str:
@@ -49,6 +55,7 @@ def _new_conversation():
     st.session_state.messages = []
     st.session_state.last_chunks = []
     st.session_state.last_standalone_query = ""
+    st.session_state.last_hypothetical_document = ""
 
 
 # --- RTL / Hebrew styling ---
@@ -184,7 +191,7 @@ def _render_source_card(chunk: Dict[str, Any], idx: int) -> None:
     source = meta.get("source", "")
     topic = meta.get("topic", "")
     score = chunk.get("score", 0.0)
-    score_pct = f"{score * 100:.0f}%"
+    score_pct = f"{score * 100:.0f}"
 
     with st.container():
         st.markdown(
@@ -222,12 +229,16 @@ def main() -> None:
     # Sidebar: New conversation
     with st.sidebar:
         st.markdown("### הגדרות")
+        st.session_state.use_hyde = st.toggle(
+            "הפעל חיפוש מתקדם (HyDE)",
+            value=st.session_state.use_hyde,
+        )
         if st.button("🆕 שיחה חדשה", use_container_width=True):
             _new_conversation()
             st.rerun()
 
-    # Chat history
-    for m in st.session_state.messages:
+    # Chat history (show last N messages)
+    for m in st.session_state.messages[-MAX_MESSAGES_DISPLAY:]:
         role = _role(m)
         content = _content(m)
         if role in ("user", "human"):
@@ -246,6 +257,14 @@ def main() -> None:
     last_user_text = _content(last_user) if last_user else ""
     if sq and sq.strip() != last_user_text.strip():
         st.caption(f"✏️ שאלה שעובדה לחיפוש: **{sq}**")
+
+    # Hypothetical document (HyDE) from last response
+    if st.session_state.last_hypothetical_document:
+        with st.expander(
+            "📄 מסמך היפותטי (HyDE) שנוצר עבור החיפוש",
+            expanded=False,
+        ):
+            st.write(st.session_state.last_hypothetical_document)
 
     # Sources from last response (show after assistant message)
     chunks = st.session_state.last_chunks
@@ -278,6 +297,7 @@ def main() -> None:
                 inputs = {
                     "messages": st.session_state.messages,
                     "retrieved_chunks": [],
+                    "use_hyde": st.session_state.use_hyde,
                 }
                 full_content = ""
                 last_state = None
@@ -302,23 +322,32 @@ def main() -> None:
                     st.error("שגיאה: לא התקבלה תוצאת גרף.")
                     st.stop()
 
-                norm = [
-                    {"role": _role(m), "content": _content(m)}
-                    for m in last_state.get("messages", [])
-                ]
-                st.session_state.messages = norm
+                # Append only the new assistant message; do NOT replace with graph's
+                # truncated history (graph keeps last 3 msgs, which drops older user Qs)
+                last_assistant = next(
+                    (
+                        m
+                        for m in reversed(last_state.get("messages", []))
+                        if _role(m) in {"assistant", "ai"}
+                    ),
+                    None,
+                )
+                if last_assistant:
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": _content(last_assistant)}
+                    )
+                if len(st.session_state.messages) > MAX_MESSAGES_DISPLAY:
+                    st.session_state.messages = st.session_state.messages[-MAX_MESSAGES_DISPLAY:]
                 st.session_state.last_chunks = last_state.get("retrieved_chunks") or []
                 st.session_state.last_standalone_query = last_state.get("standalone_query") or ""
+                st.session_state.last_hypothetical_document = last_state.get(
+                    "hypothetical_document", ""
+                )
 
-                if not full_content:
-                    last = next(
-                        (m for m in reversed(norm) if _role(m) in {"assistant", "ai"}),
-                        None,
-                    )
-                    if last:
-                        stream_placeholder.markdown(last["content"])
-                    else:
-                        stream_placeholder.info("לא התקבלה תשובה.")
+                if not full_content and last_assistant:
+                    stream_placeholder.markdown(_content(last_assistant))
+                elif not full_content:
+                    stream_placeholder.info("לא התקבלה תשובה.")
             except Exception as e:
                 stream_placeholder.empty()
                 st.error(f"שגיאה: {str(e)}")

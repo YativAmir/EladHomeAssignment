@@ -27,11 +27,15 @@ class ChatState(TypedDict, total=False):
       later for the Streamlit UI to present citations / sources.
     - standalone_query: context-aware rewritten question used for retrieval
       and passed to the generation node.
+    - use_hyde: whether to use Hypothetical Document Embeddings for retrieval.
+    - hypothetical_document: generated hypothetical document when HyDE is enabled.
     """
 
     messages: List[AnyMessage]
     retrieved_chunks: List[Dict[str, Any]]
     standalone_query: str
+    use_hyde: bool
+    hypothetical_document: str
 
 
 @dataclass
@@ -153,9 +157,28 @@ def retrieve(state: ChatState) -> ChatState:
             response.content if hasattr(response, "content") else str(response)
         ).strip() or latest_user
 
-    # Embed the standalone query (not the raw user message) for retrieval.
+    # HyDE: optionally generate a hypothetical document and embed query + document.
+    use_hyde = state.get("use_hyde", False)
+    hypothetical_document = ""
+    if use_hyde:
+        hyde_prompt = (
+            "כתוב קטע קצר ופסקה היפותטית מתוך ספר לימוד או מאמר בפסיכולוגיה שעונה על השאלה הבאה. "
+            "ענה בצורה מקצועית, עניינית ובעברית. אל תכתוב הקדמות או סיכומים, רק את הטקסט המקצועי עצמו.\n"
+            f"השאלה: {standalone_query}"
+        )
+        hyde_response = services.rewrite_model.invoke(
+            [{"role": "user", "content": hyde_prompt}]
+        )
+        hypothetical_document = (
+            hyde_response.content if hasattr(hyde_response, "content") else str(hyde_response)
+        ).strip()
+        text_to_embed = f"{standalone_query}\n\n{hypothetical_document}"
+    else:
+        text_to_embed = standalone_query
+
+    # Embed the text (standalone query, or query + hypothetical document when HyDE is on).
     query_emb = services.embedding_model.encode(
-        [standalone_query],
+        [text_to_embed],
         normalize_embeddings=True,
         show_progress_bar=False,
     )[0].tolist()
@@ -188,6 +211,7 @@ def retrieve(state: ChatState) -> ChatState:
         **state,
         "standalone_query": standalone_query,
         "retrieved_chunks": retrieved,
+        "hypothetical_document": hypothetical_document,
     }
 
 

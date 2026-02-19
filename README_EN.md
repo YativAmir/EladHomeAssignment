@@ -11,6 +11,8 @@ The solution is built on an advanced **RAG (Retrieval‑Augmented Generation)** 
 
 ## Table of Contents
 - [Overview](#overview)
+- [Knowledge Base](#knowledge-base)
+- [Example Questions](#example-questions)
 - [Product Thinking & Strategic Decisions](#product-thinking)
 - [System Architecture](#architecture)
 - [Tech Stack](#tech)
@@ -27,6 +29,49 @@ This project was designed from day one as an **enterprise‑ready** solution, wi
 - **Modularity** and a clean architecture (Data → Retrieval → Generation → UI).
 - **Transparency** via citations (chunks + similarity score).
 - **Handling classic RAG limitations** (loss of context in follow‑up questions, hallucination sensitivity, etc.).
+
+---
+
+<a id="knowledge-base"></a>
+## Knowledge Base
+The system is built on **four Hebrew PDF documents** that serve as the initial knowledge base. Each document covers a core topic with definitions, symptoms, risk factors/causes, and treatment approaches:
+
+- **Anxiety.pdf** — Anxiety disorders: the distinction between fear vs. anxiety, common symptoms (emotional/physical/cognitive/behavioral), key disorder types (panic, social anxiety, specific phobias, GAD), and major treatment approaches (CBT, psychodynamic, medication).  
+- **Depression.pdf** — Depression: what it is, core symptoms, contributing factors (biological/psychological/environmental), common types (major depression, persistent depressive disorder/dysthymia, etc.), when to seek help, and treatment options.  
+- **Eating disorders.pdf** — Eating disorders: DSM‑5 categories (anorexia, bulimia, binge‑eating disorder, etc.), causes, medical/psychological impact, and treatment (often multidisciplinary).  
+- **Trauma.pdf** — Trauma & PTSD: what PTSD is, typical symptom clusters, DSM‑5‑TR diagnostic criteria, risk factors, and evidence‑based treatments (e.g., trauma‑focused CBT and EMDR).
+
+> 💡 Extending coverage: you can add more documents, re-run preprocessing, and re-index to expand the chatbot’s domain.
+
+<a id="example-questions"></a>
+## Example Questions
+Examples of “good” questions that match the current knowledge base (including follow‑ups):
+
+### Anxiety
+- What is the difference between fear and anxiety?  
+- What are common physical vs. cognitive symptoms of anxiety?  
+- What is a panic attack and what symptoms can appear?  
+- How is social anxiety different from a specific phobia?  
+- What are common treatment approaches for anxiety (CBT vs. psychodynamic vs. medication)?
+
+### Depression
+- What are the main symptoms of major depression?  
+- What factors can contribute to depression (biological/psychological/environmental)?  
+- What is the difference between major depression and dysthymia?  
+- When is it recommended to seek treatment for depression?  
+- What treatment options exist (CBT / psychodynamic / medication)?
+
+### Eating Disorders
+- What types of eating disorders exist according to DSM‑5?  
+- What is the difference between bulimia and binge‑eating disorder?  
+- What medical risks can eating disorders involve?  
+- What does multidisciplinary treatment typically include?
+
+### Trauma & PTSD
+- What is PTSD and how is it different from a “normal” stress response after an event?  
+- What are intrusive symptoms and avoidance, and how do they show up day-to-day?  
+- What evidence‑based treatments exist for PTSD (e.g., EMDR or exposure‑based therapy)?  
+- What is the difference between Acute Stress Disorder and PTSD?
 
 ---
 

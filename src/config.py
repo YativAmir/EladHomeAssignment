@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     openai_model: str = Field("gpt-4o", env="OPENAI_MODEL_NAME")
     openai_temperature: float = Field(0.2, env="OPENAI_TEMPERATURE")
     openai_max_tokens: int = Field(768, env="OPENAI_MAX_TOKENS")
+    openai_rewrite_model: str = Field("gpt-4o-mini", env="OPENAI_REWRITE_MODEL_NAME")
 
     # Pinecone
     pinecone_api_key: str = Field(..., env="PINECONE_API_KEY")

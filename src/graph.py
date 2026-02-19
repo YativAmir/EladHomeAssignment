@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TypedDict
 
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
-from openai import OpenAI
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 
@@ -17,7 +17,7 @@ load_dotenv()
 settings = get_settings()
 
 
-class ChatState(TypedDict):
+class ChatState(TypedDict, total=False):
     """
     Conversation state flowing through the LangGraph.
 
@@ -25,22 +25,41 @@ class ChatState(TypedDict):
     - retrieved_chunks: list of retrieved knowledge base chunks
       that were used to answer the latest question. This will be useful
       later for the Streamlit UI to present citations / sources.
+    - standalone_query: context-aware rewritten question used for retrieval
+      and passed to the generation node.
     """
 
     messages: List[AnyMessage]
     retrieved_chunks: List[Dict[str, Any]]
+    standalone_query: str
 
 
 @dataclass
 class Services:
     """
-    Shared service clients (OpenAI, Pinecone, embeddings) for reuse across nodes.
+    Shared service clients (Pinecone, embeddings, LangChain chat model) for reuse across nodes.
     """
 
-    openai_client: OpenAI = field(default_factory=lambda: OpenAI(api_key=settings.openai_api_key))
     pinecone_client: Pinecone = field(default_factory=lambda: Pinecone(api_key=settings.pinecone_api_key))
     embedding_model: SentenceTransformer = field(
         default_factory=lambda: SentenceTransformer(settings.embedding_model_name, device="cpu")
+    )
+    chat_model: ChatOpenAI = field(
+        default_factory=lambda: ChatOpenAI(
+            api_key=settings.openai_api_key,
+            model=settings.openai_model,
+            temperature=settings.openai_temperature,
+            max_tokens=settings.openai_max_tokens,
+            streaming=True,
+        )
+    )
+    rewrite_model: ChatOpenAI = field(
+        default_factory=lambda: ChatOpenAI(
+            api_key=settings.openai_api_key,
+            model=settings.openai_rewrite_model,
+            temperature=0.0,
+            streaming=False,
+        )
     )
 
     def get_index(self):
@@ -69,6 +88,24 @@ def _latest_user_message(messages: List[AnyMessage]) -> Optional[str]:
     return None
 
 
+def _format_chat_history(messages: List[AnyMessage]) -> str:
+    """
+    Format chat history as a string for the rewrite prompt.
+    """
+    lines: List[str] = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+        else:
+            role = getattr(msg, "type", getattr(msg, "role", ""))
+            content = getattr(msg, "content", "")
+        content = content if isinstance(content, str) else str(content)
+        label = "משתמש/ת" if role in ("human", "user") else "עוזר/ת"
+        lines.append(f"{label}: {content}")
+    return "\n".join(lines)
+
+
 def truncate_history(state: ChatState, max_messages: int = 3) -> ChatState:
     """
     Keep only the last `max_messages` messages in the state.
@@ -88,17 +125,37 @@ def truncate_history(state: ChatState, max_messages: int = 3) -> ChatState:
 
 def retrieve(state: ChatState) -> ChatState:
     """
-    Retrieve relevant chunks from Pinecone based on the latest user message.
+    Retrieve relevant chunks from Pinecone. Uses a context-aware standalone query
+    (rewritten from chat history when applicable) for better follow-up retrieval.
     """
 
     messages = state.get("messages", [])
-    query = _latest_user_message(messages)
-    if not query:
-        return {**state, "retrieved_chunks": []}
+    latest_user = _latest_user_message(messages)
+    if not latest_user:
+        return {**state, "retrieved_chunks": [], "standalone_query": ""}
 
-    # Embed the query using the same embedding model as indexing (normalized).
+    # Contextualize query: rewrite into standalone form when there is chat history.
+    if len(messages) <= 1:
+        standalone_query = latest_user
+    else:
+        history_str = _format_chat_history(messages)
+        rewrite_prompt = (
+            "בהתבסס על היסטוריית השיחה והשאלה האחרונה של המשתמש/ת, "
+            "כתוב/כתבי את השאלה מחדש כשאלה עצמאית וברורה בעברית. "
+            "אל תענה/י על השאלה – רק כתוב/כתבי אותה מחדש.\n\n"
+            f"היסטוריית השיחה:\n{history_str}\n\n"
+            f"השאלה האחרונה של המשתמש/ת: {latest_user}"
+        )
+        response = services.rewrite_model.invoke(
+            [{"role": "user", "content": rewrite_prompt}]
+        )
+        standalone_query = (
+            response.content if hasattr(response, "content") else str(response)
+        ).strip() or latest_user
+
+    # Embed the standalone query (not the raw user message) for retrieval.
     query_emb = services.embedding_model.encode(
-        [query],
+        [standalone_query],
         normalize_embeddings=True,
         show_progress_bar=False,
     )[0].tolist()
@@ -129,6 +186,7 @@ def retrieve(state: ChatState) -> ChatState:
 
     return {
         **state,
+        "standalone_query": standalone_query,
         "retrieved_chunks": retrieved,
     }
 
@@ -182,7 +240,10 @@ def generate_answer(state: ChatState) -> ChatState:
         )
     else:
         context_text = _build_context_from_chunks(strong_chunks)
-        user_text = _latest_user_message(messages) or ""
+        # Use the context-aware standalone query from retrieve; fallback to raw user message.
+        query_for_prompt = (
+            state.get("standalone_query") or _latest_user_message(messages) or ""
+        )
 
         system_prompt = (
             "את/ה צ'אטבוט תומך, נגיש וידידותי בעברית, שמתמקד בפסיכולוגיה ובריאות נפשית בלבד.\n"
@@ -202,18 +263,12 @@ def generate_answer(state: ChatState) -> ChatState:
             {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": f"השאלה של המשתמש/ת:\n{user_text}",
+                "content": f"השאלה של המשתמש/ת:\n{query_for_prompt}",
             },
         ]
 
-        completion = services.openai_client.chat.completions.create(
-            model=settings.openai_model,
-            temperature=settings.openai_temperature,
-            max_tokens=settings.openai_max_tokens,
-            messages=prompt_messages,
-        )
-
-        assistant_content = completion.choices[0].message.content or ""
+        response = services.chat_model.invoke(prompt_messages)
+        assistant_content = (response.content if hasattr(response, "content") else str(response)) or ""
 
     # Append the assistant message to the conversation history, then truncate.
     new_state: ChatState = {

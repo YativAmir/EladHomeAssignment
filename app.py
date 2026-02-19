@@ -26,6 +26,8 @@ def _init_session():
         st.session_state.messages: List[Dict[str, Any]] = []
     if "last_chunks" not in st.session_state:
         st.session_state.last_chunks: List[Dict[str, Any]] = []
+    if "last_standalone_query" not in st.session_state:
+        st.session_state.last_standalone_query: str = ""
 
 
 def _role(m: Any) -> str:
@@ -46,36 +48,105 @@ def _new_conversation():
     st.session_state.thread_id = str(uuid.uuid4())
     st.session_state.messages = []
     st.session_state.last_chunks = []
+    st.session_state.last_standalone_query = ""
 
 
 # --- RTL / Hebrew styling ---
 RTL_CSS = """
 <style>
-    /* RTL layout for main content */
-    [data-testid="stAppViewContainer"] {
-        direction: rtl;
+    /* 0. Root: RTL for entire page */
+    html, body {
+        direction: rtl !important;
+        text-align: right !important;
     }
+
+    /* 1. Streamlit main content wrapper */
+    main[data-testid="stAppViewContainer"],
+    main[data-testid="stAppViewContainer"] > div,
+    main[data-testid="stAppViewContainer"] > div > div,
+    section[data-testid="stSidebar"] + div,
+    .block-container {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* 3. Block container, vertical blocks */
+    [data-testid="stAppViewBlockContainer"],
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] > div,
+    div[data-testid="stVerticalBlock"],
+    div[data-testid="stVerticalBlock"] > div {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* 4. Elements: titles, captions, expanders, alerts */
+    [data-testid="stAppViewBlockContainer"] h1,
+    [data-testid="stAppViewBlockContainer"] h2,
+    [data-testid="stAppViewBlockContainer"] h3,
+    [data-testid="stAppViewBlockContainer"] p,
+    [data-testid="stExpander"],
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] > div,
+    [data-testid="stCaptionContainer"],
+    .stCaption,
+    [data-testid="stAlert"],
+    .stAlert {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* 5. Chat messages: avatar on right, content RTL (flex row-reverse) */
     [data-testid="stChatMessage"] {
-        direction: rtl;
-        text-align: right;
+        display: flex !important;
+        flex-direction: row-reverse !important;
+        direction: rtl !important;
+        text-align: right !important;
     }
-    .stChatMessage .stMarkdown {
-        text-align: right;
+    [data-testid="stChatMessage"] [data-testid="stChatMessageContent"],
+    [data-testid="stChatMessage"] .stMarkdown {
+        text-align: right !important;
+        direction: rtl !important;
     }
-    /* Input area */
-    [data-testid="stChatInput"] textarea {
-        direction: rtl;
-        text-align: right;
+
+    /* 6. Markdown: lists, paragraphs, RTL padding */
+    [data-testid="stChatMessage"] .stMarkdown p,
+    [data-testid="stChatMessage"] .stMarkdown li {
+        text-align: right !important;
+        direction: rtl !important;
     }
-    /* Source cards */
+    [data-testid="stChatMessage"] .stMarkdown ul,
+    [data-testid="stChatMessage"] .stMarkdown ol {
+        padding-right: 1.5em !important;
+        padding-left: 0 !important;
+        margin-right: 0 !important;
+        text-align: right !important;
+        direction: rtl !important;
+    }
+
+    /* 7. Chat input: container + textarea RTL */
+    [data-testid="stChatInput"],
+    [data-testid="stChatInput"] > div,
+    .stChatInputContainer,
+    .stChatInputContainer > div {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    [data-testid="stChatInput"] textarea,
+    [data-testid="stChatInput"] input {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* 8. Source cards (preserved) */
     .source-card {
         background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
         border: 1px solid #dee2e6;
         border-radius: 12px;
         padding: 1rem 1.25rem;
         margin: 0.75rem 0;
-        text-align: right;
-        direction: rtl;
+        text-align: right !important;
+        direction: rtl !important;
     }
     .source-header {
         font-weight: 600;
@@ -166,6 +237,16 @@ def main() -> None:
             with st.chat_message("assistant", avatar="🤖"):
                 st.markdown(content)
 
+    # Rephrased question (when different from user's raw message)
+    sq = st.session_state.last_standalone_query
+    last_user = next(
+        (m for m in reversed(st.session_state.messages) if _role(m) in ("user", "human")),
+        None,
+    )
+    last_user_text = _content(last_user) if last_user else ""
+    if sq and sq.strip() != last_user_text.strip():
+        st.caption(f"✏️ שאלה שעובדה לחיפוש: **{sq}**")
+
     # Sources from last response (show after assistant message)
     chunks = st.session_state.last_chunks
     if chunks:
@@ -189,36 +270,59 @@ def main() -> None:
             st.markdown(prompt)
 
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("מחפש מידע ומכין תשובה..."):
-                try:
-                    app = build_graph()
-                    result = app.invoke(
-                        {
-                            "messages": st.session_state.messages,
-                            "retrieved_chunks": [],
-                        },
-                        config={"configurable": {"thread_id": st.session_state.thread_id}},
-                    )
-                except Exception as e:
-                    st.error(f"שגיאה: {str(e)}")
+            stream_placeholder = st.empty()
+            stream_placeholder.markdown("מחפש מידע ומכין תשובה...")
+            try:
+                app = build_graph()
+                config = {"configurable": {"thread_id": st.session_state.thread_id}}
+                inputs = {
+                    "messages": st.session_state.messages,
+                    "retrieved_chunks": [],
+                }
+                full_content = ""
+                last_state = None
+                for event in app.stream(
+                    inputs,
+                    config=config,
+                    stream_mode=["messages", "values"],
+                ):
+                    if event[0] == "messages":
+                        msg_chunk, meta = event[1]
+                        node_name = meta.get("langgraph_node", "")
+                        content = getattr(msg_chunk, "content", None) or ""
+                        if node_name == "generate" and content:
+                            if not full_content:
+                                stream_placeholder.empty()
+                            full_content += content
+                            stream_placeholder.markdown(full_content)
+                    elif event[0] == "values":
+                        last_state = event[1]
+
+                if last_state is None:
+                    st.error("שגיאה: לא התקבלה תוצאת גרף.")
                     st.stop()
 
-            # Normalize messages
-            norm = [
-                {"role": _role(m), "content": _content(m)}
-                for m in result.get("messages", [])
-            ]
-            st.session_state.messages = norm
-            st.session_state.last_chunks = result.get("retrieved_chunks") or []
+                norm = [
+                    {"role": _role(m), "content": _content(m)}
+                    for m in last_state.get("messages", [])
+                ]
+                st.session_state.messages = norm
+                st.session_state.last_chunks = last_state.get("retrieved_chunks") or []
+                st.session_state.last_standalone_query = last_state.get("standalone_query") or ""
 
-            last = next(
-                (m for m in reversed(norm) if _role(m) in {"assistant", "ai"}),
-                None,
-            )
-            if last:
-                st.markdown(last["content"])
-            else:
-                st.info("לא התקבלה תשובה.")
+                if not full_content:
+                    last = next(
+                        (m for m in reversed(norm) if _role(m) in {"assistant", "ai"}),
+                        None,
+                    )
+                    if last:
+                        stream_placeholder.markdown(last["content"])
+                    else:
+                        stream_placeholder.info("לא התקבלה תשובה.")
+            except Exception as e:
+                stream_placeholder.empty()
+                st.error(f"שגיאה: {str(e)}")
+                st.stop()
 
         st.rerun()
 

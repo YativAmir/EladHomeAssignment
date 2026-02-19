@@ -66,18 +66,23 @@
 flowchart LR
   U[User] --> S[Streamlit UI]
   S --> LG[LangGraph Agent]
-
   LG --> R[Retrieve Node]
-  R -->|Standalone Query| Mmini[GPT-4o-mini]
-  R -->|Vector Search| P[Pinecone]
+
+  R -->|Rewrite question| Mmini[GPT-4o-mini]
   R -->|HyDE optional| Mmini
+
+  Mmini --> Q[Standalone / HyDE text]
+  Q --> E[Embed query (BGE-M3)]
+  E -->|Vector search| P[Pinecone]
 
   P --> C[Relevant Chunks + Metadata]
   C --> G[Generate Node]
+  Q --> G
 
-  G -->|Answer| Mo[GPT-4o]
+  G --> Mo[GPT-4o]
   Mo --> S
   S -->|Citations| U
+
 ```
 
 ---

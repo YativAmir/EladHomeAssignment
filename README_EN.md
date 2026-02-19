@@ -66,24 +66,22 @@ The flow is managed by a **StateGraph** with two main nodes:
 #### Flow Diagram (Mermaid)
 ```mermaid
 flowchart LR
-  U[User] --> S[Streamlit UI]
-  S --> LG[LangGraph Agent]
-  LG --> R[Retrieve Node]
+  U[User] --> S[Streamlit UI];
+  S --> LG[LangGraph Agent];
+  LG --> R[Retrieve Node];
 
-  R -->|Rewrite question| Mmini[GPT-4o-mini]
-  R -->|HyDE optional| Mmini
+  R -->|Rewrite / HyDE| Mmini[GPT-4o-mini];
+  Mmini --> Q["Standalone query / HyDE text"];
+  Q --> E["Embed query: BGE M3"];
+  E -->|Vector search| P[Pinecone];
 
-  Mmini --> Q[Standalone / HyDE text]
-  Q --> E[Embed query (BGE-M3)]
-  E -->|Vector search| P[Pinecone]
+  P --> C["Relevant chunks + metadata"];
+  C --> G[Generate Node];
+  Q --> G;
 
-  P --> C[Relevant Chunks + Metadata]
-  C --> G[Generate Node]
-  Q --> G
-
-  G --> Mo[GPT-4o]
-  Mo --> S
-  S -->|Citations| U
+  G --> Mo[GPT-4o];
+  Mo --> S;
+  S -->|Citations| U;
 ```
 
 ---
